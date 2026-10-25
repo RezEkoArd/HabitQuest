@@ -57,19 +57,3 @@ fun bestStreak(habit: Habit, records: List<DailyHabitProgress>, today: LocalDate
     }
     return longest
 }
-
-/** Explicit sample history for the three starter habits; never called for user-created habits. */
-fun demoHistory(today: LocalDate, habits: List<Habit>): List<DailyHabitProgress> = buildList {
-    habits.forEach { habit ->
-        var date = habit.startedOn
-        while (date.isBefore(today)) {
-            val missed = when (habit.id) {
-                1L -> date.dayOfMonth % 6 == 0
-                2L -> date.dayOfMonth in listOf(5, 11, 17, 23)
-                else -> date.dayOfMonth % 3 == 0
-            }
-            add(DailyHabitProgress(habit.id, date, habit.target, if (missed) 0 else habit.target))
-            date = date.plusDays(1)
-        }
-    }
-}

@@ -40,11 +40,14 @@ private val ProgressLocale = Locale.forLanguageTag("id-ID")
 private val FullDate = DateTimeFormatter.ofPattern("d MMMM yyyy", ProgressLocale)
 
 @Composable
-fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (Long) -> Unit, onToday: () -> Unit) {
+fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (Long) -> Unit, onToday: () -> Unit, onReminder: (Long) -> Unit = {}, notificationsAllowed: Boolean = true) {
     val habit = state.habits.find { it.id == selectedHabitId } ?: state.habits.firstOrNull()
     if (habit == null) {
         Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Belum ada habit", style = MaterialTheme.typography.headlineSmall)
+            Icon(painterResource(R.drawable.ic_chart), null, Modifier.size(48.dp), tint = Forest)
+            Spacer(Modifier.height(18.dp))
+            Text("Belum ada progres", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
             Text("Mulai satu kebiasaan untuk melihat progresmu.", color = Muted, textAlign = TextAlign.Center)
             TextButton(onClick = onToday) { Text("Buka Hari Ini") }
         }
@@ -104,15 +107,15 @@ fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (L
                             habit.reminderTime?.let { "Jadwal pukul ${it.format(DateTimeFormatter.ofPattern("HH.mm"))}" } ?: "Tanpa pengingat",
                             style = MaterialTheme.typography.titleMedium,
                         )
-                        Text(if (habit.reminderTime != null) "Setiap hari · notifikasi belum aktif" else "Belum ada jam pengingat untuk habit ini.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                        Text(if (habit.reminderTime == null) "Belum ada jam pengingat untuk habit ini." else if (notificationsAllowed) "Setiap hari · mengikuti jam lokal" else "Notifikasi belum diizinkan", style = MaterialTheme.typography.bodySmall, color = Muted)
                     }
                 }
+                TextButton(onClick = { onReminder(habit.id) }) { Text("Ubah pengingat") }
             }
         }
         item(key = "source") {
             Text(
-                if (habit.id in 1L..3L) "Mode demo · Riwayat awal memakai data contoh. Progres hari ini mengikuti catatanmu. Data belum disimpan permanen."
-                else "Mode demo · Progres dihitung sejak habit dibuat. Data belum disimpan permanen.",
+                "Progres dihitung sejak habit dibuat dan disimpan secara lokal di perangkat ini.",
                 style = MaterialTheme.typography.bodySmall, color = Muted,
             )
         }

@@ -15,7 +15,7 @@ import com.rezekoard.habitquest.domain.Habit
 import java.time.LocalTime
 
 @Composable
-internal fun LogProgressDialog(habit: Habit, onDismiss: () -> Unit, onSave: (Int) -> Unit) {
+internal fun LogProgressDialog(habit: Habit, onDismiss: () -> Unit, saving: Boolean = false, onSave: (Int) -> Unit) {
     var amount by rememberSaveable(habit.id) { mutableStateOf((habit.target - habit.progress).coerceAtLeast(1).toString()) }
     val number = amount.toIntOrNull()
     val valid = number != null && number in 1..10_000
@@ -42,14 +42,15 @@ internal fun LogProgressDialog(habit: Habit, onDismiss: () -> Unit, onSave: (Int
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { number?.takeIf { valid }?.let(onSave) }, enabled = valid) { Text("Simpan progres") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } },
+        confirmButton = { TextButton(onClick = { number?.takeIf { valid }?.let(onSave) }, enabled = valid && !saving) { Text(if (saving) "Menyimpan…" else "Simpan progres") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Batal") } },
     )
 }
 
 @Composable
 internal fun CreateHabitDialog(
     onDismiss: () -> Unit,
+    saving: Boolean = false,
     onSave: (String, String, Int, String, LocalTime?) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf("") }
@@ -116,15 +117,43 @@ internal fun CreateHabitDialog(
                         supportingText = { Text("Format 24 jam, misalnya 07:00 atau 20:30.") },
                     )
                 }
-                Text("Mode demo: pengingat belum mengirim notifikasi.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                Text("Satu pengingat per hari jika target belum selesai. Waktu dapat bergeser karena penghemat baterai.", style = MaterialTheme.typography.bodySmall, color = Muted)
             }
         },
         confirmButton = {
             TextButton(
-                enabled = valid,
+                enabled = valid && !saving,
                 onClick = { if (valid) onSave(name.trim(), category, targetNumber!!, unit.trim(), if (reminder) parsedTime else null) },
-            ) { Text("Buat habit") }
+            ) { Text(if (saving) "Menyimpan…" else "Buat habit") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Batal") } },
+    )
+}
+
+@Composable
+internal fun ReminderDialog(habit: Habit, saving: Boolean, onDismiss: () -> Unit, onSave: (LocalTime?) -> Unit) {
+    var enabled by rememberSaveable(habit.id) { mutableStateOf(habit.reminderTime != null) }
+    var time by rememberSaveable(habit.id) { mutableStateOf(habit.reminderTime?.toString() ?: "07:00") }
+    val parsed = runCatching { LocalTime.parse(time.trim()) }.getOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("Pengingat habit") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(habit.name, style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ingatkan setiap hari", Modifier.weight(1f))
+                    Switch(checked = enabled, onCheckedChange = { enabled = it }, enabled = !saving)
+                }
+                if (enabled) {
+                    OutlinedTextField(value = time, onValueChange = { time = it.take(5) }, label = { Text("Jam (HH:mm)") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !saving, isError = parsed == null,
+                        supportingText = { Text("Format 24 jam, misalnya 07:00.") })
+                }
+                Text("Dilewati jika target hari ini sudah selesai. Jadwal mengikuti jam lokal perangkat dan dapat bergeser karena penghemat baterai.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(if (enabled) parsed else null) }, enabled = !saving && (!enabled || parsed != null)) { Text(if (saving) "Menyimpan…" else "Simpan pengingat") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Batal") } },
     )
 }

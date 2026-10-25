@@ -46,9 +46,9 @@ fun ProfileScreen(state: HabitUiState) {
                 Box(
                     Modifier.size(72.dp).background(SoftGreen, RoundedCornerShape(24.dp)),
                     contentAlignment = Alignment.Center,
-                ) { Text("R", color = Forest, fontSize = 30.sp, fontWeight = FontWeight.SemiBold) }
+                ) { Text(state.initial, color = Forest, fontSize = 30.sp, fontWeight = FontWeight.SemiBold) }
                 Spacer(Modifier.height(13.dp))
-                Text("Rezek", style = MaterialTheme.typography.headlineLarge)
+                Text(state.userName, style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(5.dp))
                 Text("Menumbuhkan versi terbaik diri sendiri.", color = Muted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
             }
@@ -80,8 +80,8 @@ fun ProfileScreen(state: HabitUiState) {
         item(key = "encouragement") {
             Text("Tanpa pengurangan XP saat melewatkan hari.\nBesok selalu bisa mulai lagi.", Modifier.fillMaxWidth(), color = Muted, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
         }
-        item(key = "demo") {
-            Text("Mode demo · Statistik dan badge memakai riwayat contoh serta catatan sesi ini. Data belum disimpan permanen.", style = MaterialTheme.typography.bodySmall, color = Muted)
+        item(key = "local") {
+            Text("Statistik dan badge dihitung dari catatanmu. Data disimpan secara lokal di perangkat ini.", style = MaterialTheme.typography.bodySmall, color = Muted)
         }
     }
 
