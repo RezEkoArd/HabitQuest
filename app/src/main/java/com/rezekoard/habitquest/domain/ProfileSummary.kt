@@ -34,7 +34,7 @@ fun summarizeProfile(habits: List<Habit>, records: List<DailyHabitProgress>, tod
         activeDaysThisMonth = validRecords.filter { it.amount > 0 && YearMonth.from(it.date) == YearMonth.from(today) }
             .map { it.date }.distinct().size,
         longestHabitStreak = habits.maxOfOrNull { bestStreak(it, validRecords, today) } ?: 0,
-        habitCount = habits.size,
+        habitCount = habits.count { !it.isArchived },
         completedHabitDays = completed.size,
         mostCompletedDaysForOneHabit = completed.groupingBy { it.habitId }.eachCount().values.maxOrNull() ?: 0,
     )
@@ -42,6 +42,6 @@ fun summarizeProfile(habits: List<Habit>, records: List<DailyHabitProgress>, tod
 
 fun achievementsFor(summary: ProfileSummary): List<Achievement> = listOf(
     Achievement("first", "Langkah awal", "Selesaikan target harian pertamamu pada satu habit.", summary.completedHabitDays, 1, "target"),
-    Achievement("week", "7 hari konsisten", "Selesaikan target pada habit yang sama selama 7 hari berturut-turut.", summary.longestHabitStreak, 7, "hari berturut-turut"),
+    Achievement("week", "7 hari konsisten", "Selesaikan target pada habit yang sama selama 7 hari terjadwal berturut-turut. Hari istirahat tidak memutus streak.", summary.longestHabitStreak, 7, "hari terjadwal"),
     Achievement("month", "30 hari tumbuh", "Selesaikan target pada habit yang sama di 30 hari. Tidak harus berturut-turut.", summary.mostCompletedDaysForOneHabit, 30, "hari selesai"),
 )

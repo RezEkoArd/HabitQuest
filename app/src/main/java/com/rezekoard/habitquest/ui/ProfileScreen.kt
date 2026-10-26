@@ -29,7 +29,7 @@ import com.rezekoard.habitquest.domain.achievementsFor
 import com.rezekoard.habitquest.domain.summarizeProfile
 
 @Composable
-fun ProfileScreen(state: HabitUiState) {
+fun ProfileScreen(state: HabitUiState, onEditName: () -> Unit = {}, onManageHabits: () -> Unit = {}, onExport: () -> Unit = {}, onRestore: () -> Unit = {}) {
     val summary = remember(state.habits, state.history, state.date) {
         summarizeProfile(state.habits, state.habits.flatMap(state::recordsFor), state.date)
     }
@@ -54,6 +54,17 @@ fun ProfileScreen(state: HabitUiState) {
             }
         }
         item(key = "journey") { ProfileJourney(state) }
+        item(key = "actions") {
+            Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Hairline)) {
+                Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                    TextButton(onClick = onEditName, modifier = Modifier.fillMaxWidth()) { Text("Edit nama profil") }
+                    TextButton(onClick = onManageHabits, modifier = Modifier.fillMaxWidth()) { Text("Kelola habit dan arsip") }
+                    HorizontalDivider(color = Hairline)
+                    TextButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Buat backup offline") }
+                    TextButton(onClick = onRestore, modifier = Modifier.fillMaxWidth()) { Text("Pulihkan backup") }
+                }
+            }
+        }
         item(key = "achievements") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Koleksi pencapaian", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
@@ -73,7 +84,7 @@ fun ProfileScreen(state: HabitUiState) {
                     HorizontalDivider(color = Hairline)
                     ProfileStat("Streak terbaik", "${summary.longestHabitStreak} hari", icon = { Icon(painterResource(R.drawable.ic_flame), null, tint = Forest) })
                     HorizontalDivider(color = Hairline)
-                    ProfileStat("Habit yang ditumbuhkan", "${summary.habitCount} habit", icon = { Icon(painterResource(R.drawable.ic_sprout), null, tint = Forest) })
+                    ProfileStat("Habit aktif", "${summary.habitCount} habit", icon = { Icon(painterResource(R.drawable.ic_sprout), null, tint = Forest) })
                 }
             }
         }

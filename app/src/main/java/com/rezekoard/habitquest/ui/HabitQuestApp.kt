@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
@@ -42,11 +43,19 @@ private enum class Destination(val label: String) {
 fun HabitQuestApp(
     state: HabitUiState,
     onAdvance: suspend (Long, Int) -> Int,
-    onAddHabit: suspend (String, String, Int, String, LocalTime?) -> Unit,
+    onAddHabit: suspend (String, String, Int, String, LocalTime?, Int) -> Unit,
     onUpdateReminder: suspend (Long, LocalTime?) -> Unit = { _, _ -> },
     onSyncReminders: suspend () -> Unit = {},
     requestedHabitId: Long? = null,
     onReminderHandled: () -> Unit = {},
+    onEditHabit: suspend (Long, String, String, Int, Int) -> Unit = { _, _, _, _, _ -> },
+    onArchiveHabit: suspend (Long, Boolean) -> Unit = { _, _ -> },
+    onCorrectProgress: suspend (Long, LocalDate, Int) -> Int = { _, _, _ -> 0 },
+    onEditName: suspend (String) -> Unit = {},
+    onExportBackup: suspend (Uri) -> Unit = {},
+    onRequestRestore: () -> Unit = {},
+    onSaveNote: suspend (Long, LocalDate, String) -> Unit = { _, _, _ -> },
+    onMoveHabit: suspend (Long, Int) -> Unit = { _, _ -> },
 ) {
     var destinationName by rememberSaveable { mutableStateOf(Destination.TODAY.name) }
     val destination = Destination.valueOf(destinationName)
@@ -55,9 +64,31 @@ fun HabitQuestApp(
     var reminderHabitId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedProgressHabit by rememberSaveable { mutableStateOf(2L) }
     var saving by remember { mutableStateOf(false) }
+    var editHabitId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var archiveHabitId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var correctHabitId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var correctDate by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+    var showManage by rememberSaveable { mutableStateOf(false) }
+    var showEditName by rememberSaveable { mutableStateOf(false) }
+    var noteHabitId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var noteDate by rememberSaveable { mutableStateOf(state.date.toString()) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val pageStates = rememberSaveableStateHolder()
+    fun mutate(block: suspend () -> String) {
+        if (saving) return
+        saving = true
+        scope.launch {
+            val message = try { block() }
+            catch (error: CancellationException) { throw error }
+            catch (_: Exception) { "Perubahan belum tersimpan. Silakan coba lagi." }
+            finally { saving = false }
+            snackbar.showSnackbar(message)
+        }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) mutate { onExportBackup(uri); "Backup berhasil disimpan." }
+    }
     val context = LocalContext.current
     val preview = LocalInspectionMode.current
     val notificationAccess = remember(context, preview) { if (preview) null else AndroidReminderNotifications(context.applicationContext) }
@@ -92,7 +123,7 @@ fun HabitQuestApp(
         if (requestedHabitId != null && state.date == LocalDate.now()) {
             destinationName = Destination.TODAY.name
             reminderHabitId = null
-            progressHabitId = state.habits.find { it.id == requestedHabitId && !it.isComplete }?.id
+            progressHabitId = state.habits.find { it.id == requestedHabitId && !it.isComplete && !it.isArchived && it.isScheduledOn(state.date) }?.id
             onReminderHandled()
         }
     }
@@ -157,6 +188,9 @@ fun HabitQuestApp(
                         onCreate = { showCreate = true },
                         onReminder = { reminderHabitId = it }, notificationsAllowed = notificationsAllowed,
                         onRequestNotifications = { requestNotificationAccess() },
+                        onEdit = { editHabitId = it },
+                        onCorrect = { correctHabitId = it; correctDate = state.date.toString() },
+                        onNote = { noteHabitId = it; noteDate = state.date.toString() },
                     )
                     Destination.PROGRESS -> ProgressScreen(
                         state = state,
@@ -164,8 +198,14 @@ fun HabitQuestApp(
                         onSelectHabit = { selectedProgressHabit = it },
                         onToday = { destinationName = Destination.TODAY.name },
                         onReminder = { reminderHabitId = it }, notificationsAllowed = notificationsAllowed,
+                        onEdit = { editHabitId = it },
+                        onCorrect = { id, date -> correctHabitId = id; correctDate = date.toString() },
+                        onNote = { id, date -> noteHabitId = id; noteDate = date.toString() },
                     )
-                    Destination.PROFILE -> ProfileScreen(state)
+                    Destination.PROFILE -> ProfileScreen(state,
+                        onEditName = { showEditName = true }, onManageHabits = { showManage = true },
+                        onExport = { if (!saving) exportLauncher.launch("habitquest-backup-${state.date}.json") },
+                        onRestore = { if (!saving) onRequestRestore() })
                 }
             }
         }
@@ -197,12 +237,12 @@ fun HabitQuestApp(
         CreateHabitDialog(
             onDismiss = { if (!saving) showCreate = false },
             saving = saving,
-            onSave = { name, category, target, unit, time ->
+            onSave = { name, category, target, unit, time, weekdays ->
                 if (!saving) {
                     saving = true
                     scope.launch {
                         val message = try {
-                            onAddHabit(name, category, target, unit, time)
+                            onAddHabit(name, category, target, unit, time, weekdays)
                             showCreate = false
                             if (time != null && !notificationsAllowed) requestNotificationAccess()
                             "Habit baru ditambahkan. Selamat memulai!"
@@ -236,10 +276,47 @@ fun HabitQuestApp(
             },
         )
     }
+    if (showManage) ManageHabitsDialog(state.habits, onDismiss = { showManage = false }, onEdit = { showManage = false; editHabitId = it }, onArchive = { showManage = false; archiveHabitId = it }, saving = saving, onMove = { id, direction -> mutate { onMoveHabit(id, direction); "Urutan habit tersimpan." } })
+    state.habits.find { it.id == editHabitId }?.let { habit ->
+        CreateHabitDialog(onDismiss = { if (!saving) editHabitId = null }, saving = saving, habit = habit,
+            onArchive = { archiveHabitId = habit.id }, onSave = { name, category, target, _, _, weekdays ->
+                mutate { onEditHabit(habit.id, name, category, target, weekdays); editHabitId = null; "Habit diperbarui. Target dan jadwal baru mulai besok." }
+            })
+    }
+    state.habits.find { it.id == archiveHabitId }?.let { habit ->
+        AlertDialog(onDismissRequest = { if (!saving) archiveHabitId = null }, containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text(if (habit.isArchived) "Pulihkan habit?" else "Arsipkan habit?") },
+            text = { Text(if (habit.isArchived) "Habit kembali aktif mulai besok sesuai jadwalnya. Riwayat dan XP tetap tersimpan." else "Habit berhenti muncul di Hari Ini dan pengingat dihentikan. Riwayat dan XP tetap tersimpan.") },
+            confirmButton = { TextButton(enabled = !saving, onClick = {
+                mutate { onArchiveHabit(habit.id, !habit.isArchived); archiveHabitId = null; editHabitId = null; if (habit.isArchived) "Habit dipulihkan. Jadwal mulai besok." else "Habit diarsipkan." }
+            }) { Text(if (habit.isArchived) "Pulihkan" else "Arsipkan") } },
+            dismissButton = { TextButton(onClick = { archiveHabitId = null }, enabled = !saving) { Text("Batal") } })
+    }
+    state.habits.find { it.id == correctHabitId }?.let { habit ->
+        val date = LocalDate.parse(correctDate)
+        val record = state.recordsFor(habit).find { it.date == date }
+        CorrectProgressDialog(habit, date, record, saving, onDismiss = { if (!saving) correctHabitId = null }, onSave = { amount ->
+            mutate {
+                val delta = onCorrectProgress(habit.id, date, amount)
+                correctHabitId = null
+                "Progres dikoreksi." + if (delta == 0) " XP tetap." else " XP disesuaikan ${if (delta > 0) "+" else ""}$delta."
+            }
+        })
+    }
+    if (showEditName) EditNameDialog(state.userName, saving, onDismiss = { if (!saving) showEditName = false }, onSave = { name ->
+        mutate { onEditName(name); showEditName = false; "Nama profil diperbarui." }
+    })
+    state.habits.find { it.id == noteHabitId }?.let { habit ->
+        val date = LocalDate.parse(noteDate)
+        val note = state.notes.find { it.habitId == habit.id && it.date == date }?.body.orEmpty()
+        HabitNoteDialog(habit.name, date, note, saving, onDismiss = { if (!saving) noteHabitId = null }, onSave = { body ->
+            mutate { onSaveNote(habit.id, date, body); noteHabitId = null; if (body.isBlank()) "Catatan dihapus." else "Catatan tersimpan." }
+        })
+    }
 }
 
 @Preview(showBackground = true, widthDp = 393, heightDp = 852)
 @Composable
 private fun HabitQuestPreview() {
-    HabitQuestTheme { HabitQuestApp(HabitUiState(), { _, _ -> 0 }, { _, _, _, _, _ -> }) }
+    HabitQuestTheme { HabitQuestApp(HabitUiState(), { _, _ -> 0 }, { _, _, _, _, _, _ -> }) }
 }

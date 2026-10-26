@@ -52,6 +52,7 @@ class NotificationPlatformTest {
             withTimeout(5_000) { while (system.activeNotifications.none { it.tag == "habit:$id" }) delay(100) }
             val notification = system.activeNotifications.first { it.tag == "habit:$id" }.notification
             assertTrue(notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("Tinggal 5 halaman"))
+            assertEquals(listOf("Tunda 10 menit", "Tunda 30 menit"), notification.actions.map { it.title.toString() })
             notification.contentIntent.send()
             withTimeout(30_000) {
                 while (true) {
@@ -62,6 +63,7 @@ class NotificationPlatformTest {
             }
             repo.advance(id, 5)
             manager.reconcileHabit(id)
+            withTimeout(5_000) { while (system.activeNotifications.any { it.tag == "habit:$id" }) delay(100) }
             assertTrue(system.activeNotifications.none { it.tag == "habit:$id" })
             assertEquals(1, db.habitDao().deliveryCount(id, LocalDate.now().toEpochDay()))
         } finally {

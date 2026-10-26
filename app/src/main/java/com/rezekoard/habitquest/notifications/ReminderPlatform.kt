@@ -24,10 +24,16 @@ const val EXTRA_DATE = "reminder_date"
 const val EXTRA_TIME = "reminder_time"
 const val REMINDER_CHANNEL = "habit_reminders"
 const val ACTION_OPEN_REMINDER = "com.rezekoard.habitquest.OPEN_REMINDER"
+const val ACTION_REQUEST_SNOOZE = "com.rezekoard.habitquest.REQUEST_SNOOZE"
+const val ACTION_DELIVER_SNOOZE = "com.rezekoard.habitquest.DELIVER_SNOOZE"
+const val EXTRA_SNOOZE_MINUTES = "snooze_minutes"
+const val EXTRA_TRIGGER_AT = "trigger_at"
 
 interface ReminderScheduler {
     fun schedule(id: Long, time: LocalTime, at: ZonedDateTime)
     fun cancel(id: Long)
+    fun scheduleSnooze(id: Long, date: LocalDate, triggerAt: Long)
+    fun cancelSnooze(id: Long)
 }
 
 data class ReminderMessage(val habitId: Long, val date: LocalDate, val name: String, val amount: Int, val target: Int, val unit: String)
@@ -56,6 +62,22 @@ class AndroidReminderScheduler(private val context: Context) : ReminderScheduler
         alarms.cancel(pending)
         pending.cancel()
     }
+
+    private fun snoozeIntent(id: Long) = Intent(context, HabitSnoozeReceiver::class.java)
+        .setAction(ACTION_DELIVER_SNOOZE).setData(Uri.parse("habitquest://snooze/$id")).putExtra(EXTRA_HABIT_ID, id)
+
+    override fun scheduleSnooze(id: Long, date: LocalDate, triggerAt: Long) {
+        val pending = PendingIntent.getBroadcast(context, 0, snoozeIntent(id)
+            .putExtra(EXTRA_DATE, date.toEpochDay()).putExtra(EXTRA_TRIGGER_AT, triggerAt),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+    }
+
+    override fun cancelSnooze(id: Long) {
+        val pending = PendingIntent.getBroadcast(context, 0, snoozeIntent(id), PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE) ?: return
+        alarms.cancel(pending)
+        pending.cancel()
+    }
 }
 
 class AndroidReminderNotifications(private val context: Context) : ReminderNotifications {
@@ -80,11 +102,20 @@ class AndroidReminderNotifications(private val context: Context) : ReminderNotif
         val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val text = if (message.amount > 0) "Sudah ${message.amount} dari ${message.target} ${message.unit}. Tinggal ${message.target - message.amount} ${message.unit} lagi!"
             else "Target hari ini: ${message.target} ${message.unit}. Yuk, mulai langkah kecilmu!"
-        val notification = Notification.Builder(context, REMINDER_CHANNEL)
+        val builder = Notification.Builder(context, REMINDER_CHANNEL)
             .setSmallIcon(R.drawable.ic_sprout).setContentTitle("Waktunya: ${message.name}").setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text)).setContentIntent(pending).setAutoCancel(true)
             .setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_REMINDER)
-            .addExtras(Bundle().apply { putLong(EXTRA_DATE, message.date.toEpochDay()) }).build()
+            .addExtras(Bundle().apply { putLong(EXTRA_DATE, message.date.toEpochDay()) })
+        listOf(10, 30).forEach { minutes ->
+            val snooze = Intent(context, HabitSnoozeReceiver::class.java).setAction(ACTION_REQUEST_SNOOZE)
+                .setData(Uri.parse("habitquest://snooze-action/${message.habitId}/${message.date}/$minutes"))
+                .putExtra(EXTRA_HABIT_ID, message.habitId).putExtra(EXTRA_DATE, message.date.toEpochDay())
+                .putExtra(EXTRA_SNOOZE_MINUTES, minutes)
+            val action = PendingIntent.getBroadcast(context, 0, snooze, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            builder.addAction(Notification.Action.Builder(null, "Tunda $minutes menit", action).build())
+        }
+        val notification = builder.build()
         notifications.notify("habit:${message.habitId}", 1, notification)
     }
 

@@ -15,6 +15,7 @@ data class DailyHabitProgress(val habitId: Long, val date: LocalDate, val target
 enum class DayStatus(val label: String) {
     COMPLETE("Selesai"), PARTIAL("Sebagian"), MISSED("Terlewat"),
     TODAY_EMPTY("Belum dikerjakan"), FUTURE("Belum tiba"), NOT_STARTED("Belum dimulai"),
+    REST("Tidak dijadwalkan"), ARCHIVED("Diarsipkan"),
 }
 
 data class MonthlyHabitSummary(val completedDays: Int, val scheduledDays: Int, val totalAmount: Long) {
@@ -22,10 +23,12 @@ data class MonthlyHabitSummary(val completedDays: Int, val scheduledDays: Int, v
 }
 
 fun dayStatus(habit: Habit, date: LocalDate, today: LocalDate, record: DailyHabitProgress?): DayStatus = when {
-    date.isAfter(today) -> DayStatus.FUTURE
     date.isBefore(habit.startedOn) -> DayStatus.NOT_STARTED
+    date.isAfter(today) -> if (habit.planOn(date).weekdays == 0) DayStatus.ARCHIVED else if (!habit.isScheduledOn(date)) DayStatus.REST else DayStatus.FUTURE
     record?.isComplete == true -> DayStatus.COMPLETE
     (record?.amount ?: 0) > 0 -> DayStatus.PARTIAL
+    habit.planOn(date).weekdays == 0 -> DayStatus.ARCHIVED
+    !habit.isScheduledOn(date) -> DayStatus.REST
     date == today -> DayStatus.TODAY_EMPTY
     else -> DayStatus.MISSED
 }
@@ -34,26 +37,32 @@ fun summarizeMonth(habit: Habit, records: List<DailyHabitProgress>, month: YearM
     val start = maxOf(month.atDay(1), habit.startedOn)
     val end = minOf(month.atEndOfMonth(), today)
     if (start.isAfter(end)) return MonthlyHabitSummary(0, 0, 0)
-    val days = records.filter { it.habitId == habit.id && !it.date.isBefore(start) && !it.date.isAfter(end) }
-        .associateBy { it.date }.values
+    val days = records.filter { it.habitId == habit.id && !it.date.isBefore(start) && !it.date.isAfter(end) }.associateBy { it.date }
+    var scheduled = 0
+    var date = start
+    while (date <= end) {
+        if (habit.isScheduledOn(date) || (days[date]?.amount ?: 0) > 0) scheduled++
+        date = date.plusDays(1)
+    }
     return MonthlyHabitSummary(
-        completedDays = days.count { it.isComplete },
-        scheduledDays = (end.toEpochDay() - start.toEpochDay() + 1).toInt(),
-        totalAmount = days.sumOf { it.amount.toLong() },
+        completedDays = days.values.count { it.isComplete },
+        scheduledDays = scheduled,
+        totalAmount = days.values.sumOf { it.amount.toLong() },
     )
 }
 
 fun bestStreak(habit: Habit, records: List<DailyHabitProgress>, today: LocalDate): Int {
-    val completed = records.filter {
-        it.habitId == habit.id && it.isComplete && !it.date.isBefore(habit.startedOn) && !it.date.isAfter(today)
-    }.map { it.date }.distinct().sorted()
-    var previous: LocalDate? = null
+    val byDate = records.filter { it.habitId == habit.id }.associateBy { it.date }
     var streak = 0
     var longest = 0
-    completed.forEach { date ->
-        streak = if (previous?.plusDays(1) == date) streak + 1 else 1
-        longest = maxOf(longest, streak)
-        previous = date
+    var date = habit.startedOn
+    while (date <= today) {
+        val record = byDate[date]
+        if (habit.isScheduledOn(date) || (record?.amount ?: 0) > 0) {
+            streak = if (record?.isComplete == true) streak + 1 else 0
+            longest = maxOf(longest, streak)
+        }
+        date = date.plusDays(1)
     }
     return longest
 }

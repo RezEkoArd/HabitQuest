@@ -13,6 +13,7 @@ import com.rezekoard.habitquest.ui.HabitQuestTheme
 import com.rezekoard.habitquest.ui.HabitViewModel
 import com.rezekoard.habitquest.ui.StartupScreen
 import com.rezekoard.habitquest.ui.WelcomeScreen
+import com.rezekoard.habitquest.ui.BackupRestoreHost
 import com.rezekoard.habitquest.notifications.ACTION_OPEN_REMINDER
 import com.rezekoard.habitquest.notifications.EXTRA_HABIT_ID
 import com.rezekoard.habitquest.notifications.EXTRA_DATE
@@ -47,15 +48,21 @@ class MainActivity : ComponentActivity() {
                 val model: HabitViewModel = viewModel()
                 val state by model.state.collectAsStateWithLifecycle()
                 val target by requestedHabit.collectAsStateWithLifecycle()
-                when {
-                    state.isLoading -> StartupScreen()
-                    state.storageError != null -> StartupScreen(state.storageError, model::reload)
-                    state.userName.isBlank() -> WelcomeScreen(model::completeOnboarding)
-                    else -> HabitQuestApp(
-                        state, model::advance, model::addHabit,
-                        onUpdateReminder = model::updateReminder, onSyncReminders = model::syncReminders,
-                        requestedHabitId = target, onReminderHandled = { requestedHabit.value = null },
-                    )
+                BackupRestoreHost(model::prepareRestore, model::restoreBackup) { requestRestore ->
+                    when {
+                        state.isLoading -> StartupScreen()
+                        state.storageError != null -> StartupScreen(state.storageError, model::reload)
+                        state.userName.isBlank() -> WelcomeScreen(model::completeOnboarding, onRestore = requestRestore)
+                        else -> HabitQuestApp(
+                            state, model::advance, model::addHabit,
+                            onUpdateReminder = model::updateReminder, onSyncReminders = model::syncReminders,
+                            requestedHabitId = target, onReminderHandled = { requestedHabit.value = null },
+                            onEditHabit = model::editHabit, onArchiveHabit = model::setArchived,
+                            onCorrectProgress = model::correctProgress, onEditName = model::editProfileName,
+                            onExportBackup = model::exportBackup, onRequestRestore = requestRestore,
+                            onSaveNote = model::saveNote, onMoveHabit = model::moveHabit,
+                        )
+                    }
                 }
             }
         }

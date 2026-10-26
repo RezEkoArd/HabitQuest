@@ -37,7 +37,7 @@ import java.util.Locale
 private val Indonesian = Locale.forLanguageTag("id-ID")
 
 @Composable
-fun TodayScreen(state: HabitUiState, onLog: (Long) -> Unit, onCreate: () -> Unit, onReminder: (Long) -> Unit = {}, notificationsAllowed: Boolean = true, onRequestNotifications: () -> Unit = {}) {
+fun TodayScreen(state: HabitUiState, onLog: (Long) -> Unit, onCreate: () -> Unit, onReminder: (Long) -> Unit = {}, notificationsAllowed: Boolean = true, onRequestNotifications: () -> Unit = {}, onEdit: (Long) -> Unit = {}, onCorrect: (Long) -> Unit = {}, onNote: (Long) -> Unit = {}) {
     val listState = rememberLazyListState()
     LazyColumn(
         state = listState,
@@ -74,13 +74,13 @@ fun TodayScreen(state: HabitUiState, onLog: (Long) -> Unit, onCreate: () -> Unit
         item(key = "section") {
             Row(Modifier.fillMaxWidth().padding(top = 9.dp, bottom = 1.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Rencana hari ini", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                Text("${state.habits.size} habit", style = MaterialTheme.typography.bodySmall, color = Muted)
+                Text("${state.todayHabits.size} habit", style = MaterialTheme.typography.bodySmall, color = Muted)
             }
         }
-        if (state.habits.isEmpty()) {
-            item(key = "empty") { TodayEmptyState(onCreate) }
+        if (state.todayHabits.isEmpty()) {
+            item(key = "empty") { TodayEmptyState(onCreate, state.habits.isNotEmpty()) }
         } else {
-            items(state.habits, key = { it.id }) { habit -> HabitCard(habit, onLog = { onLog(habit.id) }, onReminder = { onReminder(habit.id) }) }
+            items(state.todayHabits, key = { it.id }) { habit -> HabitCard(habit, onLog = { onLog(habit.id) }, onReminder = { onReminder(habit.id) }, onEdit = { onEdit(habit.id) }, onCorrect = { onCorrect(habit.id) }, onNote = { onNote(habit.id) }, note = state.notes.find { it.habitId == habit.id && it.date == state.date }?.body) }
             item(key = "create") {
                 OutlinedButton(
                     onClick = onCreate,
@@ -104,21 +104,21 @@ fun TodayScreen(state: HabitUiState, onLog: (Long) -> Unit, onCreate: () -> Unit
 }
 
 @Composable
-private fun TodayEmptyState(onCreate: () -> Unit) {
+private fun TodayEmptyState(onCreate: () -> Unit, hasHabits: Boolean) {
     Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, Hairline)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(62.dp).background(SoftGreen, RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {
                 Icon(painterResource(R.drawable.ic_sprout), null, Modifier.size(33.dp), tint = Forest)
             }
             Spacer(Modifier.height(16.dp))
-            Text("Belum ada habit hari ini", style = MaterialTheme.typography.titleLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(if (hasHabits) "Tidak ada jadwal hari ini" else "Belum ada habit hari ini", style = MaterialTheme.typography.titleLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Spacer(Modifier.height(8.dp))
-            Text("Mulai dari satu kebiasaan kecil.\nKamu bisa menumbuhkannya pelan-pelan.", style = MaterialTheme.typography.bodyMedium, color = Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(if (hasHabits) "Nikmati hari istirahatmu. Jadwal dan arsip habit bisa dilihat lewat Profil → Kelola habit." else "Mulai dari satu kebiasaan kecil.\nKamu bisa menumbuhkannya pelan-pelan.", style = MaterialTheme.typography.bodyMedium, color = Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Spacer(Modifier.height(18.dp))
             Button(onClick = onCreate, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(Icons.Outlined.Add, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(7.dp))
-                Text("Buat habit pertama")
+                Text(if (hasHabits) "Buat habit baru" else "Buat habit pertama")
             }
         }
     }
@@ -158,6 +158,8 @@ private fun WeekStrip(today: LocalDate) {
 
 @Composable
 private fun XpSummary(state: HabitUiState) {
+    val habits = state.todayHabits
+    val completed = habits.count { it.isComplete }
     Surface(color = DeepForest, contentColor = Color(0xFFF3F7EB), shape = RoundedCornerShape(23.dp)) {
         Box(Modifier.fillMaxWidth()) {
             Icon(
@@ -166,9 +168,9 @@ private fun XpSummary(state: HabitUiState) {
                 tint = Color.White.copy(alpha = .09f),
             )
             Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                Text(if (state.habits.isEmpty()) "Perjalananmu baru dimulai" else "${state.completedCount} dari ${state.habits.size} habit selesai", style = MaterialTheme.typography.bodySmall, color = Color(0xFFD3E0CA))
+                Text(if (state.habits.isEmpty()) "Perjalananmu baru dimulai" else if (habits.isEmpty()) "Hari ini tanpa jadwal habit" else "$completed dari ${habits.size} habit selesai", style = MaterialTheme.typography.bodySmall, color = Color(0xFFD3E0CA))
                 Spacer(Modifier.height(6.dp))
-                Text(when { state.habits.isEmpty() -> "Satu langkah kecil dulu."; state.completedCount == state.habits.size -> "Hari ini, kamu berhasil."; else -> "Jaga ritme baikmu." }, style = MaterialTheme.typography.headlineSmall)
+                Text(when { state.habits.isEmpty() -> "Satu langkah kecil dulu."; habits.isEmpty() -> "Istirahat juga berarti."; completed == habits.size -> "Hari ini, kamu berhasil."; else -> "Jaga ritme baikmu." }, style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(20.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Surface(
@@ -193,7 +195,7 @@ private fun XpSummary(state: HabitUiState) {
 }
 
 @Composable
-private fun HabitCard(habit: Habit, onLog: () -> Unit, onReminder: () -> Unit) {
+private fun HabitCard(habit: Habit, onLog: () -> Unit, onReminder: () -> Unit, onEdit: () -> Unit, onCorrect: () -> Unit, onNote: () -> Unit, note: String?) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(19.dp), border = BorderStroke(1.dp, Hairline),
@@ -252,6 +254,12 @@ private fun HabitCard(habit: Habit, onLog: () -> Unit, onReminder: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().height(5.dp),
                 color = Forest, trackColor = Hairline, gapSize = 0.dp, drawStopIndicator = {},
             )
+            if (note != null) Text(note, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp))
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onEdit) { Text("Edit habit", style = MaterialTheme.typography.labelSmall) }
+                TextButton(onClick = onNote, modifier = Modifier.semantics { contentDescription = "Catatan ${habit.name}" }) { Text(if (note == null) "Catatan" else "Edit catatan", style = MaterialTheme.typography.labelSmall) }
+                TextButton(onClick = onCorrect) { Text("Koreksi progres", style = MaterialTheme.typography.labelSmall) }
+            }
         }
     }
 }

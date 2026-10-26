@@ -40,7 +40,7 @@ private val ProgressLocale = Locale.forLanguageTag("id-ID")
 private val FullDate = DateTimeFormatter.ofPattern("d MMMM yyyy", ProgressLocale)
 
 @Composable
-fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (Long) -> Unit, onToday: () -> Unit, onReminder: (Long) -> Unit = {}, notificationsAllowed: Boolean = true) {
+fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (Long) -> Unit, onToday: () -> Unit, onReminder: (Long) -> Unit = {}, notificationsAllowed: Boolean = true, onEdit: (Long) -> Unit = {}, onCorrect: (Long, LocalDate) -> Unit = { _, _ -> }, onNote: (Long, LocalDate) -> Unit = { _, _ -> }) {
     val habit = state.habits.find { it.id == selectedHabitId } ?: state.habits.firstOrNull()
     if (habit == null) {
         Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -70,13 +70,16 @@ fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (L
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 15.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item(key = "period-summary") { PeriodSummaryCard(state) }
         item(key = "heading") {
             HabitSelector(state.habits, habit, onSelectHabit)
         }
         item(key = "schedule") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                InfoPill("Setiap hari", calendar = true)
+                InfoPill(weekdayLabel(habit.planOn(state.date).weekdays), calendar = true)
                 InfoPill("Mulai ${habit.startedOn.format(DateTimeFormatter.ofPattern("d MMM yyyy", ProgressLocale))}")
+                if (habit.isArchived) InfoPill("Arsip")
+                TextButton(onClick = { onEdit(habit.id) }) { Text("Edit habit") }
             }
         }
         item(key = "calendar") {
@@ -86,6 +89,9 @@ fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (L
                 onSelectDate = { selectedDayKey = it.toString() },
                 onPrevious = { monthKey = month.minusMonths(1).toString() },
                 onNext = { monthKey = month.plusMonths(1).toString() },
+                onCorrect = { onCorrect(habit.id, it) },
+                note = state.notes.find { it.habitId == habit.id && it.date == selectedDate }?.body,
+                onNote = { onNote(habit.id, it) },
             )
         }
         item(key = "metrics") {
@@ -94,7 +100,7 @@ fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (L
                 MetricCard("Total ${habit.unit}", "${summary.totalAmount}", habit.unit, Modifier.weight(1f))
             }
             if (summary.scheduledDays == 0) {
-                Text("Habit belum dimulai pada bulan ini.", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.padding(top = 9.dp))
+                Text("Tidak ada jadwal habit pada bulan ini.", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.padding(top = 9.dp))
             }
         }
         item(key = "milestone") { MilestoneCard(allCompleted, streak) }
@@ -104,10 +110,10 @@ fun ProgressScreen(state: HabitUiState, selectedHabitId: Long, onSelectHabit: (L
                     Icon(Icons.Outlined.Notifications, null, tint = Forest)
                     Column(Modifier.weight(1f)) {
                         Text(
-                            habit.reminderTime?.let { "Jadwal pukul ${it.format(DateTimeFormatter.ofPattern("HH.mm"))}" } ?: "Tanpa pengingat",
+                            if (habit.isArchived) "Pengingat dihentikan selama diarsipkan" else habit.reminderTime?.let { "Jadwal pukul ${it.format(DateTimeFormatter.ofPattern("HH.mm"))}" } ?: "Tanpa pengingat",
                             style = MaterialTheme.typography.titleMedium,
                         )
-                        Text(if (habit.reminderTime == null) "Belum ada jam pengingat untuk habit ini." else if (notificationsAllowed) "Setiap hari · mengikuti jam lokal" else "Notifikasi belum diizinkan", style = MaterialTheme.typography.bodySmall, color = Muted)
+                        Text(if (habit.reminderTime == null) "Belum ada jam pengingat untuk habit ini." else if (notificationsAllowed) "Sesuai hari pelaksanaan · jam lokal" else "Notifikasi belum diizinkan", style = MaterialTheme.typography.bodySmall, color = Muted)
                     }
                 }
                 TextButton(onClick = { onReminder(habit.id) }) { Text("Ubah pengingat") }
@@ -181,6 +187,8 @@ private fun MonthCalendar(
     habit: Habit, month: YearMonth, today: LocalDate, byDate: Map<LocalDate, DailyHabitProgress>,
     selectedDate: LocalDate, summary: MonthlyHabitSummary,
     onSelectDate: (LocalDate) -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
+    onCorrect: (LocalDate) -> Unit,
+    note: String?, onNote: (LocalDate) -> Unit,
 ) {
     ProgressCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -223,26 +231,34 @@ private fun MonthCalendar(
             CalendarLegend("Selesai", DayStatus.COMPLETE)
             CalendarLegend("Sebagian", DayStatus.PARTIAL)
             CalendarLegend("Terlewat", DayStatus.MISSED)
+            CalendarLegend("Istirahat / arsip", DayStatus.REST)
         }
         Spacer(Modifier.height(14.dp))
         HorizontalDivider(color = Hairline)
         Spacer(Modifier.height(12.dp))
+        if (note != null) Text(note, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
+        if (selectedDate <= today && selectedDate >= habit.startedOn) {
+            TextButton(onClick = { onNote(selectedDate) }) { Text(if (note == null) "Tambah catatan tanggal ini" else "Edit catatan tanggal ini") }
+        }
         val record = byDate[selectedDate]
         val status = dayStatus(habit, selectedDate, today, record)
         Text(selectedDate.format(FullDate), style = MaterialTheme.typography.labelLarge)
         Text(
             when (status) {
-                DayStatus.FUTURE, DayStatus.NOT_STARTED -> status.label
-                else -> "${record?.amount ?: 0} / ${record?.target ?: habit.target} ${habit.unit} · ${status.label}"
+                DayStatus.FUTURE, DayStatus.NOT_STARTED, DayStatus.REST, DayStatus.ARCHIVED -> status.label
+                else -> "${record?.amount ?: 0} / ${record?.target ?: habit.planOn(selectedDate).target} ${habit.unit} · ${status.label}"
             },
             style = MaterialTheme.typography.bodySmall, color = Muted,
         )
+        if (selectedDate <= today && selectedDate >= habit.startedOn && (habit.isScheduledOn(selectedDate) || (record?.amount ?: 0) > 0)) {
+            TextButton(onClick = { onCorrect(selectedDate) }) { Text("Koreksi progres tanggal ini") }
+        }
     }
 }
 
 @Composable
 private fun CalendarDay(date: LocalDate, status: DayStatus, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val inactive = status == DayStatus.FUTURE || status == DayStatus.NOT_STARTED
+    val inactive = status in listOf(DayStatus.FUTURE, DayStatus.NOT_STARTED, DayStatus.REST, DayStatus.ARCHIVED)
     Surface(
         modifier = modifier.height(44.dp),
         shape = RoundedCornerShape(10.dp),

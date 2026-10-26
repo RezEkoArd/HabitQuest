@@ -22,7 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
-fun WelcomeScreen(onContinue: suspend (String) -> Unit) {
+fun WelcomeScreen(onContinue: suspend (String) -> Unit, onRestore: () -> Unit = {}) {
     var name by rememberSaveable { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -72,6 +72,7 @@ fun WelcomeScreen(onContinue: suspend (String) -> Unit) {
                 Text(if (saving) "Menyimpan…" else "Mulai perjalanan")
             }
             Spacer(Modifier.height(24.dp))
+            TextButton(onClick = onRestore, enabled = !saving) { Text("Pulihkan dari backup") }
             Text("Tersimpan di perangkatmu. Tanpa akun.\nKamu bisa mulai dengan satu habit saja.", style = MaterialTheme.typography.bodySmall, color = Muted, textAlign = TextAlign.Center)
         }
     }

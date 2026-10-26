@@ -37,3 +37,23 @@ class ReminderRescheduleReceiver : BroadcastReceiver() {
         }
     }
 }
+
+class HabitSnoozeReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val id = intent.getLongExtra(EXTRA_HABIT_ID, -1)
+        val day = intent.getLongExtra(EXTRA_DATE, Long.MIN_VALUE)
+        if (id <= 0 || day == Long.MIN_VALUE || intent.action !in setOf(ACTION_REQUEST_SNOOZE, ACTION_DELIVER_SNOOZE)) return
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                withTimeout(8_000) {
+                    val manager = HabitReminderManager(context.applicationContext)
+                    val date = LocalDate.ofEpochDay(day)
+                    if (intent.action == ACTION_REQUEST_SNOOZE) manager.snooze(id, date, intent.getIntExtra(EXTRA_SNOOZE_MINUTES, 0))
+                    else manager.deliverSnooze(id, date, intent.getLongExtra(EXTRA_TRIGGER_AT, -1))
+                }
+            } catch (error: Exception) { Log.e("HabitReminder", "Pengingat tunda belum dapat diproses", error) }
+            finally { pending.finish() }
+        }
+    }
+}

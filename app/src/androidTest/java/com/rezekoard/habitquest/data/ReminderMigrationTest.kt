@@ -35,14 +35,18 @@ class ReminderMigrationTest {
                 db.execSQL("INSERT INTO daily_progress (habitId, date, target, amount, xpEarned) VALUES (1, 20000, 15, 15, 20)")
                 db.version = 1
             }
-            val database = Room.databaseBuilder(context, HabitDatabase::class.java, name).addMigrations(HabitDatabase.MIGRATION_1_2).build()
+            val database = Room.databaseBuilder(context, HabitDatabase::class.java, name).addMigrations(HabitDatabase.MIGRATION_1_2, HabitDatabase.MIGRATION_2_3, HabitDatabase.MIGRATION_3_4).build()
             try {
-                // Opening Room applies the real migration and validates every table against schema v2.
+                // Opening Room applies the real migrations and validates every table against schema v4.
                 val db = database.openHelper.writableDatabase
-                assertEquals(2, db.version)
+                assertEquals(4, db.version)
+                db.query("SELECT sortOrder FROM habits WHERE id = 1").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+                db.query("SELECT COUNT(*) FROM habit_notes").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+                db.query("SELECT COUNT(*) FROM reminder_snoozes").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
                 db.query("SELECT displayName FROM user_profile").use { it.moveToFirst(); assertEquals("Sari", it.getString(0)) }
                 db.query("SELECT xpEarned FROM daily_progress").use { it.moveToFirst(); assertEquals(20, it.getInt(0)) }
                 db.query("SELECT COUNT(*) FROM reminder_deliveries").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+                db.query("SELECT target, weekdays FROM habit_plans WHERE habitId = 1").use { it.moveToFirst(); assertEquals(15, it.getInt(0)); assertEquals(127, it.getInt(1)) }
             } finally { database.close() }
         } finally { context.deleteDatabase(name) }
     }
